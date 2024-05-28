@@ -1,0 +1,121 @@
+Redis 연동 및 메타정보 설정
+Spring Boot에서 Redis를 사용하기 위한 설정은 RedisConnectionFactory, RedisTemplate 등을 설정하여 구현살 수 있다. 아래는 간단한 Spring Boot Redis 설정 예제 코드이다.
+위의 설정에서는 Redis 연결 정보를 읽어온 후, RedisTemplate을 빈으로 등록하여 Redis와의 상호 작용을 가능하게 한다. 이제 Spring Boot 서비스에서 RedisTemplate을 주입하여 Redis를 사용할 수 있다.
+
+RedisTemplate(RedisCacheManager) 설정
+@Autowired 어노테이션을 사용해서 Spring Boot 서비스에서 RedisTemplate을 주입하여 Redis를 사용할 수 있다.
+위의 예제에서는 RedisService클래스를 생성하여 RedisTemplate을 사용하여 Redis에 데이터를 저장하고 조회하는 메소드를 만들었다. 이렇게 구성된 설정과 서비스를 통해 검색 api에서 쉽게 사용할 수 있다.
+@Autowired
+Private RedisTemplate<String, Object> redisTemplate;
+
+Public void setValue(String key, Object value) { redisTemplate.opsForValue().set(key, value); }
+
+Public Objects getValue(String key) { return redisTemplate.opsForValue().get(key); }
+
+
+@Cacheable, @CacheEvict 어노테이션 적용
+@Cacheable 및 @CacheEvict는 Spring Boot에서 캐싱을 지원하는 어노테이션이다. @Cacheable은 메서드의 결과를 캐시에 저장하고, @CacheEvict는 캐시에서 데이터를 제거한다.
+오른쪽 예제 코드에서는 getIserById 메서드에 @Cacheable어노테이션이 적용되어 있어 메서드의 결과가 캐시에 저장된다.
+evictUserCache 메서드에는 @CacheEvict 어노테이션이 적용되어 해당 키(id)에 대한 캐시가 제거된다.
+
+
+1. build.gradle 에 implements
+    > implementation group: 'org.springframework.boot', name: 'spring-boot-starter-data-redis', version: '3.1.0'
+
+2. application.properties 에 Redis 연결정보 설정
+    # redis
+    spring.cache.type=redis
+    spring.data.redis.host=localhost
+    spring.data.redis.port=6379
+    spring.data.redis.password=
+    spring.data.redis.repositories.enabled=false
+    expire.defaultTime=36288000
+
+3. SpringBootApplication 클래스에 @EnableCaching 어노테이션 선언
+
+
+4. redis의 연결정보를 설정하기 위한 Config(RedisConnectionFactory, RedisTemplate(RedisCacheManager) 클래스 생성
+    package com.fastcampus.boardserver.config;
+
+    import com.fasterxml.jackson.databind.ObjectMapper;
+    import com.fasterxml.jackson.databind.SerializationFeature;
+    import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+    import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+    import org.springframework.beans.factory.annotation.Value;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.data.redis.cache.RedisCacheConfiguration;
+    import org.springframework.data.redis.cache.RedisCacheManager;
+    import org.springframework.data.redis.connection.RedisConnectionFactory;
+    import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+    import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+    import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+    import org.springframework.data.redis.serializer.RedisSerializationContext;
+    import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+    import java.time.Duration;
+
+    @Configuration
+    public class RedisConfig {
+        @Value("${spring.data.redis.host}")
+        private String redisHost;
+
+        @Value("${spring.data.redis.port}")
+        private int redisPort;
+
+        @Value("${spring.data.redis.password}")
+        private String redisPwd;
+
+        @Value("${expire.defaultTime}")
+        private long defaultExpireSecond;
+
+        /**
+         * 역직렬화를 위해 ObjectMapper 사용.
+         * @return
+         */
+        @Bean
+        public ObjectMapper objectMapper() {
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS); // timestamp를 설정하지 못하도록 처리
+            mapper.registerModules(new JavaTimeModule(), new Jdk8Module()); // 자바의 날짜값을 인식하도록 설정, jdk8에서 추가된 라이브러리임
+            return mapper;
+        }
+
+        /**
+         * connection facotory 패턴을 이용해서 미리 커넥션을 만들어 놓아 연결 비용을 줄인다.
+         * Lettuce가 비동기로 더 빠른 성능
+         * @return
+         */
+        @Bean
+        public RedisConnectionFactory redisConnectionFactory() {
+            RedisStandaloneConfiguration redisStandaloneConfiguration = new RedisStandaloneConfiguration();
+            redisStandaloneConfiguration.setPort(redisPort);
+            redisStandaloneConfiguration.setHostName(redisHost);
+            redisStandaloneConfiguration.setPassword(redisPwd);
+            LettuceConnectionFactory lettuceConnectionFactory = new LettuceConnectionFactory(redisStandaloneConfiguration);
+            return lettuceConnectionFactory;
+        }
+
+        /**
+         * 직렬화, 역직렬화 필요.
+         * @param redisConnectionFactory
+         * @param objectMapper
+         * @return
+         */
+        @Bean
+        public RedisCacheManager redisCacheManager(RedisConnectionFactory redisConnectionFactory,
+                                                   ObjectMapper objectMapper) {
+            RedisCacheConfiguration configuration = RedisCacheConfiguration.defaultCacheConfig()
+                    .disableCachingNullValues()     // null을 허용하지 않겠다.
+                    .entryTtl(Duration.ofSeconds(defaultExpireSecond))  // 만료시간(ttl)
+                    .serializeKeysWith(             // key 직렬화 설정
+                            RedisSerializationContext.SerializationPair     // 두가지 변수를 한가지 변수로 합해주는 것
+                            .fromSerializer(new StringRedisSerializer()))
+                    .serializeValuesWith(           // value 직렬화 설정
+                            RedisSerializationContext.SerializationPair     // 두가지 변수를 한가지 변수로 합해주는 것
+                            .fromSerializer(new GenericJackson2JsonRedisSerializer(objectMapper)));
+
+            return RedisCacheManager.RedisCacheManagerBuilder.fromConnectionFactory(redisConnectionFactory)
+                    .cacheDefaults(configuration).build();
+        }
+    }
