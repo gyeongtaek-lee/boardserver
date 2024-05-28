@@ -18,6 +18,8 @@ Public Objects getValue(String key) { return redisTemplate.opsForValue().get(key
 오른쪽 예제 코드에서는 getIserById 메서드에 @Cacheable어노테이션이 적용되어 있어 메서드의 결과가 캐시에 저장된다.
 evictUserCache 메서드에는 @CacheEvict 어노테이션이 적용되어 해당 키(id)에 대한 캐시가 제거된다.
 
+Redis 클라이언트 UI 툴 : P3X Redis UI
+
 
 1. build.gradle 에 implements
     > implementation group: 'org.springframework.boot', name: 'spring-boot-starter-data-redis', version: '3.1.0'
@@ -119,3 +121,10 @@ evictUserCache 메서드에는 @CacheEvict 어노테이션이 적용되어 해�
                     .cacheDefaults(configuration).build();
         }
     }
+
+5. @Cacheable을 통해 Redis에 캐싱 처리
+    @Async
+    @Cacheable(value = "getProducts", key = "'getProducts' + #postSearchRequest.getName() + #postSearchRequest.getCategoryId()")
+     public List<PostDTO> getProducts(PostSearchRequest postSearchRequest) {
+        ...
+     }

@@ -6,6 +6,7 @@ import com.fastcampus.boardserver.service.impl.CategoryServiceImpl;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +17,7 @@ public class CategoryController {
 
     private CategoryServiceImpl categoryService;
 
+    @Autowired
     public CategoryController(CategoryServiceImpl categoryService) {
         this.categoryService = categoryService;
     }
